@@ -143,7 +143,7 @@ For where the project is going, see [roadmap.md](roadmap.md).
 
 ## About
 
-Built by **Mark Hernandez** ([Studio Grid](https://github.com/studiogrid)). Part of the Studio Grid family alongside:
+Built by **Mark Carranza** ([Studio Grid](https://github.com/studiogrid)). Part of the Studio Grid family alongside:
 
 - **StudioDarkroom** — premium WordPress media library with folders, smart filters, and focal points
 - **Studio Media** — Bricks-native gallery, video, Lottie, and filter elements
