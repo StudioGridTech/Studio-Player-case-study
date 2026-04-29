@@ -1,124 +1,70 @@
-# Architecture
+# Roadmap
 
-A high-level look at how Studio Player is designed — the patterns that shape the codebase, the engineering decisions worth talking about, and the principles the project optimizes for.
+A high-level look at where Studio Player is and where it's headed.
 
-> Source code is private. This page covers the *thinking*, not the *recipe* — implementation specifics live in the private repo.
-
----
-
-## Single source of truth across four editors
-
-Studio Player ships native integrations for Bricks, Gutenberg, Divi, and Elementor — plus a shortcode that works in any other context. Five surfaces, one rendering pipeline.
-
-The pattern: **every editor integration delegates server-side rendering to the shortcode.** The Bricks element doesn't have its own render path. Neither does the Gutenberg block, the Divi module, or the Elementor widget. They each have their own attribute schema, their own UI controls, their own visual conventions — but when it's time to produce HTML, they all map their attributes onto the canonical shortcode shape and call into one function.
-
-This means:
-
-- Adding a new option once propagates to every editor automatically
-- Bug fixes in the render layer land everywhere simultaneously
-- The output is byte-identical regardless of which editor placed the player
-
-The cost is a small attribute-mapping translation layer in each editor integration (camelCase for Gutenberg, snake_case for shortcode, on/off booleans for Divi, etc.). The benefit is that the rendering surface stays small, well-tested, and impossible to drift out of sync.
-
-This is the kind of decision that's easy to get wrong. The common alternative — each editor has its own renderer — leads to four implementations that slowly diverge until "the same player" produces three slightly different outputs. The single-source pattern prevents that drift architecturally.
+> Specific feature breakdowns and release timing for upcoming versions live in the private repo. This page covers the trajectory.
 
 ---
 
-## True cross-page playback without a SPA theme
+## Now — v1.7 (production polish)
 
-The hardest problem the project solves: **audio that survives page navigation** on standard, server-rendered WordPress sites.
+The polish pass before public release. Focus areas:
 
-Most "continuous playback" features in the WordPress plugin ecosystem rely on the active theme already implementing SPA-style navigation — barba.js, jquery.pjax, or similar. If the theme provides that, audio survives. If it doesn't, audio dies on every link click. Almost no Bricks or Divi sites have an SPA layer, which means almost no Bricks or Divi sites get the feature.
+- Production QA across real Bricks, Gutenberg, Divi, and Elementor sites
+- Edge cases in the AJAX navigation layer — third-party plugin compatibility, lazy-loaded image rebinding, analytics re-initialization
+- Compatibility matrix across popular Bricks themes and Divi child themes
+- Performance pass — first-paint cost, lazy-load tuning, bundle size audit
+- Documentation, screenshots, GIF demos
+- Public release checklist
 
-Studio Player ships its own AJAX navigation layer. Internal `<a>` clicks are intercepted, the destination is fetched, and a configurable content-area selector is replaced in-place. The player wrapper lives in a footer-injected persistent host that lives outside that swap region — so it's never destroyed, and the audio element never reloads.
-
-The layer is intentionally conservative. External origins, fragments, modifier-key clicks, downloads, forms, and a configurable URL-exclusion list all defer to native browser navigation. Failures fall back to a full page reload — never silent breakage. The customer enables it via a single admin toggle and ships.
-
----
-
-## A vanilla-JavaScript engine
-
-The frontend engine is roughly 2,200 lines of vanilla JavaScript. No bundler. No transpiler. No Node dependency. No build step.
-
-The reasoning is opinionated:
-
-- A WordPress plugin shouldn't require Node.js to clone and edit
-- Browser support for everything used is broad (Web Audio, MediaElement, IntersectionObserver, MutationObserver, Web Share, FileReader, `fetch`)
-- A build step would be dead weight at this size
-- The engine works as a standalone drop-in script outside WordPress — useful for static-site demos and testing
-
-Internationalization is handled the same way: the engine reads from `window.StudioPlayerI18n` with English fallbacks baked into every call. WordPress fills the dictionary via `wp_localize_script`; without WordPress, English strings render. Seventy-plus strings localized.
+This is the version that ships first. Everything below depends on it landing solid.
 
 ---
 
-## In-house file-format parsing where it matters
+## Soon — v2
 
-Two surfaces in the engine parse file formats directly rather than reaching for a library:
+The next major version moves Studio Player from **"the best Bricks-native audio player"** into territory that competes with category leaders on their own ground. Themes the v2 release will cover:
 
-**ID3 metadata reader** — visitor-uploaded MP3s get title, artist, album, and cover art automatically extracted on upload. Roughly 100 lines of ID3v2.3 / v2.4 parsing in the engine, defensive about text encoding (Latin-1, UTF-16 with BOM, UTF-8) and about malformed files. No `jsmediatags` dependency, no fingerprintable third-party CDN request.
+- **Beat marketplace tooling** — features that turn the player into a sales surface, not just a playback surface
+- **Anti-piracy** — protections that make the player suitable for selling original audio, not just streaming free media
+- **Conversion tooling** — features that nudge listeners toward a purchase decision while they're listening
 
-**Adaptive accent color** — the dominant color in a track's cover art is extracted via canvas pixel sampling and applied to the player's accent variable. The math is straightforward (skip near-white, near-black, low-alpha pixels; average what's left); the value is in shipping it inline rather than as a library.
+Each theme is its own discrete piece of work. Specific feature names, ordering, and implementation details aren't being shared publicly until each piece ships. The shape will become visible at release.
 
-Each of these is the kind of feature that gets *added* to a player rather than *built into* one. Doing it inline keeps the dependency surface small.
-
----
-
-## Lazy-loaded heavy dependencies
-
-The project has exactly one optional external dependency: `wavesurfer.js` for waveform visualization (~70 KB).
-
-It loads only when the toggle is on, only on the page where it's needed. Players without waveform mode pay zero cost. Self-hosters can override the URL to keep the dependency same-origin.
-
-This is the model for any future heavy dependency — opt-in, lazy, with a self-host option.
+This is the version that justifies a higher price tier.
 
 ---
 
-## A persistence model designed around per-player state
+## Later — beyond v2
 
-Listener-side state lives in the browser, scoped per player via a configurable persistence key. Different players on the same site get different keys and don't interfere with each other.
+Possibilities being scoped for future major versions, in rough order of interest:
 
-State persisted:
+- **Statistics and analytics** — usage signals, top tracks, listener geography
+- **Bricks query-loop integration** — auto-build playlists from a CPT, tag, or category. Same pattern for Divi loops and Gutenberg query blocks.
+- **Dynamic-data bridges** — pull track data from custom fields (ACF, Metabox, JetEngine)
+- **Pre-built editor templates** — drop-in album page, podcast show page, radio station page templates for Bricks, Gutenberg, Divi, and Elementor
+- **Service Worker pre-caching** — pre-fetch the next track in a playlist for instant skip
+- **Multi-radio and multi-podcast** — composite players that aggregate multiple feeds in one element
 
-- Collapsed / expanded UI state
-- Volume level
-- Playback speed
-- Shuffle on/off
-- Repeat mode (none / all / one)
-- Per-track resume position
-- Cross-page resume snapshot (for continuous playback)
-
-Most of this lives in `localStorage` (persistent across sessions). The cross-page resume snapshot uses `sessionStorage` instead — exactly the lifecycle we want for "audio keeps playing within this browsing session, but a fresh tab starts fresh."
+These are the conversations happening internally. None are committed; some won't ship; one or two might land sooner than others depending on how customers actually use v1 and v2.
 
 ---
 
-## Performance, where it actually matters
+## Won't ship — explicit non-goals
 
-Most frontend performance work is premature optimization. The engine treats performance as a discipline applied to specific hot paths, not a blanket rule.
+Worth saying out loud so the conversation doesn't keep coming up:
 
-Three places get explicit attention:
-
-- **Engine boot on page load** — the engine's auto-boot scanner runs once on `DOMContentLoaded` and once via `MutationObserver` for late-inserted mounts (the Bricks builder canvas re-inserts elements via Vue, which the observer catches). Subsequent renders don't re-scan unless something changes.
-- **Cover-art adaptive color** — the canvas sampling happens at low resolution (12×12 pixels) once per track change. The math runs in microseconds; the cost is the image fetch, which the browser caches.
-- **AJAX-nav content swap** — the swap reads only the configured selector from the response, not the full DOM, and re-runs only inline scripts inside that region.
-
-Other code paths take the straightforward approach. Optimization happens in response to measurement, not preemptively.
+- **Native video player features** (chapters, captions, video gallery) — Studio Player stays focused on audio. The WordPress video space is dominated by Presto Player; competing there would dilute the "best Bricks audio player" wedge. The existing video mode covers basic embed needs and stays scoped to that.
+- **Hosted SaaS** — the plugin runs on the customer's WordPress site. There's no central server, no cloud media library, no multi-site analytics service. Not now, not later.
+- **Mobile app** — out of scope.
+- **Page builder as the management surface** — native integrations ship today for Bricks, Gutenberg, Divi, and Elementor (and that surface will keep growing). What stays out of scope: moving the configuration / preset / track-management workflow into the page-builder canvas as a primary surface. The shortcode + element/block/module/widget pattern is the right abstraction.
 
 ---
 
-## Design principles
+## Long-term commitment
 
-Five constraints the architecture is consistently optimized for:
+Studio Player is a multi-year project. The plan is to keep shipping incrementally — v1 establishes the foundation across four editors, v2 extends the surface for commercial audio sales, future versions sharpen the niche as customer needs become legible.
 
-1. **One renderer, four editors** — single source of truth at the render layer means no drift between editor surfaces.
-2. **Audio that survives navigation** — the differentiating feature, supported by the persistent-host pattern and a conservative AJAX nav layer.
-3. **No build step** — vanilla JavaScript, single file, edit-and-reload workflow. The plugin should be readable and modifiable without a tooling chain.
-4. **Lazy-loaded everything heavy** — the default install pays only for what it uses. Waveform off → no wavesurfer. ID3 disabled → no parser ran. Adaptive color off → no canvas work.
-5. **Engine usable outside WordPress** — the JavaScript engine works as a standalone drop-in. WordPress integration is a layer on top, not a requirement.
+The Studio Grid family is built on the same long-arc thinking: each plugin is its own focused tool, designed to ship for years rather than as a one-time release.
 
----
-
-## What this document doesn't cover
-
-Implementation specifics — file paths, class signatures, exact persistence keys, internal data structures, license validation behavior — are intentionally omitted. They live in the private repo.
-
-For licensing inquiries, evaluation copies, or technical conversations with prospective collaborators: contact via the [Studio Grid GitHub](https://github.com/studiogrid).
+For licensing inquiries, evaluation copies, or technical conversations: contact via the [Studio Grid GitHub](https://github.com/studiogrid).
